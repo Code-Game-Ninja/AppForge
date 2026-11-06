@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+const { PHASE_DEVELOPMENT_SERVER } = require('next/constants');
 const nextConfig = {
   // Enable React strict mode for better development experience
   reactStrictMode: true,
@@ -34,4 +35,8 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = (phase) => ({
+  ...nextConfig,
+  // Keep production builds and development previews from overwriting each other.
+  distDir: process.env.APPFORGE_DIST_DIR || (phase === PHASE_DEVELOPMENT_SERVER ? '.next' : '.next-production'),
+});

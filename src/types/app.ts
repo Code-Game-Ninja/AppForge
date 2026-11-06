@@ -48,6 +48,7 @@ export type License =
   | 'MPL-2.0'
   | 'LGPL-3.0'
   | 'Unlicense'
+  | 'CC0-1.0'
   | 'Other';
 
 export interface Maintainer {
@@ -98,6 +99,12 @@ export interface App {
   isVerified?: boolean;
   isFeatured?: boolean;
   topics: string[];
+  repoUrl?: string;
+  homepage?: string;
+  kind?: 'app' | 'tool' | 'framework' | 'resource';
+  language?: string;
+  dataSource?: 'catalog' | 'github';
+  recommendationReason?: string;
 }
 
 // Extended App interface for detail page

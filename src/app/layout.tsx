@@ -1,34 +1,19 @@
-import type { Metadata } from 'next';
-import { Inter, Space_Grotesk } from 'next/font/google';
+﻿import type { Metadata } from 'next';
+import { Suspense } from 'react';
+import '@fontsource-variable/manrope';
 import './globals.css';
+import './neo-glass.css';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
-const spaceGrotesk = Space_Grotesk({ 
-  subsets: ['latin'], 
-  variable: '--font-space-grotesk',
-});
+import { LibraryProvider } from '@/components/apps/LibraryProvider';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 export const metadata: Metadata = {
-  title: 'AppForge - Open Source App Marketplace',
-  description: 'Discover and install the best open source applications.',
+  title: { default: 'AppForge — Discover your next favorite open-source project', template: '%s | AppForge' },
+  description: 'Discover useful apps, popular repositories, frameworks, and tools. Explore curated collections and find an open-source stack for your next build.',
+  icons: { icon: '/logo.svg' },
 };
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en">
-      <body className={`${inter.variable} ${spaceGrotesk.variable} font-sans antialiased min-h-screen flex flex-col bg-background text-foreground`}>
-        <Navbar />
-        <main className="flex-grow">
-          {children}
-        </main>
-        <Footer />
-      </body>
-    </html>
-  );
+const themeScript = `(function(){try{var t=localStorage.getItem('appforge-theme');document.documentElement.classList.toggle('dark',t!=='light'&&(t!=='system'||window.matchMedia('(prefers-color-scheme: dark)').matches))}catch(e){}})()`;
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return <html lang="en" className="dark" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head><body><TooltipProvider delayDuration={350}><LibraryProvider><a href="#main-content" className="skip-link">Skip to content</a><Suspense fallback={<div className="topbar" />}><Navbar /></Suspense><div className="workspace"><main id="main-content">{children}</main><Footer /></div></LibraryProvider></TooltipProvider></body></html>;
 }

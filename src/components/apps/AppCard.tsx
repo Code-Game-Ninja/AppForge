@@ -1,127 +1,40 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
-import { Star, GitFork } from 'lucide-react';
-import { App } from '@/types';
-import { motion } from 'framer-motion';
+import type { CSSProperties } from 'react';
+import { ArrowUpRight, Bookmark, Check, Globe, Monitor, Star } from 'lucide-react';
+import type { App } from '@/types';
+import { categoryName, PLATFORM_NAMES } from '@/lib/discovery';
+import { formatNumber } from '@/lib/utils';
+import { AppIcon } from './AppIcon';
+import { useLibrary } from './LibraryProvider';
+import SpotlightCard from '@/components/react-bits/SpotlightCard';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-interface AppCardProps {
-  app: App;
+export function SaveButton({ app, compact = true }: { app: App; compact?: boolean }) {
+  const { isSaved, toggle, ready } = useLibrary();
+  const active = isSaved(app);
+  const control = <Button variant={compact ? 'ghost' : 'neo'} size={compact ? 'icon' : 'default'} type="button" disabled={!ready} className={compact ? `save-button ${active ? 'is-saved' : ''}` : 'px-4 py-2.5'} onClick={() => toggle(app)} aria-label={`${active ? 'Remove' : 'Save'} ${app.name}${active ? ' from' : ' to'} your library`} aria-pressed={active}>
+    {compact ? <Bookmark size={17} fill={active ? 'currentColor' : 'none'} /> : <>{active ? <Check size={17} /> : <Bookmark size={17} />}{active ? 'Saved to library' : 'Save to library'}</>}
+  </Button>;
+  return <Tooltip><TooltipTrigger asChild>{control}</TooltipTrigger><TooltipContent className="ui-tooltip">{active ? 'Remove from library' : 'Save to library'}</TooltipContent></Tooltip>;
 }
-
-function timeAgo(date: string | Date): string {
-    const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
-    const intervals: { [key: string]: number } = {
-        year: 31536000,
-        month: 2592000,
-        week: 604800,
-        day: 86400,
-        hour: 3600,
-        minute: 60,
-        second: 1
-    };
-
-    let counter;
-    for (const i in intervals) {
-        counter = Math.floor(seconds / intervals[i]);
-        if (counter > 0) {
-            if (counter === 1) {
-                return counter + ' ' + i + ' ago';
-            } else {
-                return counter + ' ' + i + 's ago';
-            }
-        }
-    }
-    return 'Just now';
-}
-
-export function AppCard({ app }: AppCardProps) {
-  return (
-    <motion.div
-      whileHover={{ y: -5, scale: 1.02 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      className="h-full"
-    >
-      <Link href={`/apps/${app.maintainer.username}/${app.slug}`} className="group relative block h-full">
-        <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-card text-card-foreground shadow-sm transition-all hover:shadow-glow/20 hover:border-primary/50 glass-card">
-          <div className="p-6 flex-grow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-4">
-                <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-secondary to-background flex items-center justify-center overflow-hidden border border-border/50 shadow-inner">
-                  {app.logo ? (
-                    <Image 
-                      src={app.logo} 
-                      alt={app.name} 
-                      width={40}
-                      height={40}
-                      className="h-10 w-10 object-contain" 
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="text-2xl font-bold font-heading text-muted-foreground">{app.name.charAt(0)}</div>
-                  )}
-                </div>
-                <div className="overflow-hidden">
-                  <h3 className="font-bold leading-none tracking-tight text-lg group-hover:text-primary transition-colors truncate">
-                    {app.name}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1.5 truncate flex items-center gap-1">
-                    by <span className="text-foreground/80 font-medium">{app.maintainer.name}</span>
-                  </p>
-                </div>
-              </div>
-              {app.stats.stars > 1000 && (
-                <div className="flex items-center text-[10px] uppercase font-bold tracking-wider text-amber-500 bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/20">
-                  <Star className="h-3 w-3 mr-1 fill-current" />
-                  Popular
-                </div>
-              )}
-            </div>
-            
-            <p className="text-sm text-muted-foreground line-clamp-3 mb-4 leading-relaxed">
-              {app.shortDescription}
-            </p>
-            
-            <div className="flex flex-wrap gap-2 mt-auto">
-              <span className="inline-flex items-center rounded-md bg-secondary/80 px-2.5 py-1 text-xs font-medium text-secondary-foreground ring-1 ring-inset ring-foreground/5 backdrop-blur-sm">
-                {app.category}
-              </span>
-              {app.license && (
-                <span className="inline-flex items-center rounded-md bg-secondary/80 px-2.5 py-1 text-xs font-medium text-secondary-foreground ring-1 ring-inset ring-foreground/5 backdrop-blur-sm">
-                  {app.license}
-                </span>
-              )}
-            </div>
-          </div>
-          
-          <div className="border-t border-border/50 bg-secondary/30 p-4 backdrop-blur-sm">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-              <div className="flex items-center gap-4">
-                <span className="flex items-center hover:text-amber-500 transition-colors" title="Stars">
-                  <Star className="mr-1.5 h-3.5 w-3.5" />
-                  {formatNumber(app.stats.stars)}
-                </span>
-                <span className="flex items-center hover:text-blue-500 transition-colors" title="Forks">
-                  <GitFork className="mr-1.5 h-3.5 w-3.5" />
-                  {formatNumber(app.stats.forks)}
-                </span>
-              </div>
-              
-              <span title={`Updated ${timeAgo(app.lastUpdated)}`} className="text-[10px] opacity-70 uppercase tracking-widest">
-                {timeAgo(app.lastUpdated)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </Link>
-    </motion.div>
-  );
-}
-
-function formatNumber(num: number): string {
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'k';
-  }
-  return num.toString();
+export function AppCard({ app, view = 'grid' }: { app: App; view?: 'grid' | 'list' }) {
+  return <article className="app-card-shell"><SpotlightCard className={`app-card ${view === 'list' ? 'app-card-list' : ''}`} spotlightColor="#b9b4ff" intensity={0.08} borderGlow={0.5} proximity={0} flare={false} smoothing={0.12} style={{ '--spotlight-card-surface': 'var(--glass-fill)', '--spotlight-card-border': 'var(--glass-edge)', '--spotlight-card-shadow': 'var(--panel-shadow)' } as CSSProperties}>
+    <div className="app-card-heading">
+      <AppIcon app={app} />
+      <div className="app-card-title"><Link href={`/apps/${app.maintainer.username}/${app.slug}`} className="app-name">{app.name}</Link><span>{categoryName(app.category)}</span></div>
+      <SaveButton app={app} />
+    </div>
+    <p className="app-description">{app.shortDescription}</p>
+    <div className="app-tags"><Badge variant="outline">{app.kind === 'framework' ? 'Framework' : app.kind === 'resource' ? 'Resource' : app.kind === 'tool' ? 'Tool' : 'App'}</Badge><Badge variant="outline">{app.license === 'Other' ? 'See license' : app.license}</Badge></div>
+    {app.recommendationReason && <p className="recommendation-reason">{app.recommendationReason}</p>}
+    <div className="app-card-footer">
+      <span className="app-stars">{app.dataSource === 'github' ? <><Star size={14} /> {formatNumber(app.stats.stars)}</> : <><Check size={14} /> Curated</>}</span>
+      <span className="app-platform" title={app.platforms.map(platform => PLATFORM_NAMES[platform]).join(', ') || 'See repository for supported platforms'}>{app.platforms.includes('web') ? <Globe size={13} /> : <Monitor size={13} />}{app.platforms.length > 1 ? 'Multi-platform' : PLATFORM_NAMES[app.platforms[0]] || 'See repository'}</span>
+      <Link href={`/apps/${app.maintainer.username}/${app.slug}`} className="card-open" aria-label={`Explore ${app.name}`}><ArrowUpRight size={17} /></Link>
+    </div>
+  </SpotlightCard></article>;
 }

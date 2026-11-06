@@ -5,24 +5,26 @@ import { GitHubRepo } from './github';
  * Convert a GitHub repository response to our App interface
  */
 export async function mapRepoToApp(repo: GitHubRepo, overrideCategory?: string): Promise<App> {
+  const topics = repo.topics || [];
   // Infer category from topics, or use override if provided
   let category: Category;
   
   if (overrideCategory && isValidCategory(overrideCategory)) {
     category = overrideCategory as Category;
   } else {
-    category = inferCategory(repo.topics);
+    category = inferCategory(topics);
   }
   
   // Infer platforms from topics or other metadata
-  const platforms = inferPlatforms(repo.topics);
+  const platforms = inferPlatforms(topics);
   
   // Map license
-  const license = (repo.license?.spdx_id as License) || 'Other';
+  const spdx = repo.license?.spdx_id;
+  const license = (spdx && spdx !== 'NOASSERTION' ? spdx as License : 'Other');
 
   return {
-    id: repo.id.toString(),
-    slug: repo.name.toLowerCase(), // Or repo.full_name? keeping short for now
+    id: repo.full_name.toLowerCase(),
+    slug: repo.name,
     name: repo.name, // Use full_name if we want owner/repo
     shortDescription: repo.description || 'No description available',
     logo: repo.owner.avatar_url, // Using owner avatar as fallback logo
@@ -41,10 +43,15 @@ export async function mapRepoToApp(repo: GitHubRepo, overrideCategory?: string):
     category,
     platforms,
     license,
-    lastUpdated: repo.updated_at,
+    lastUpdated: repo.pushed_at,
     isVerified: false, // Default to false unless we have a whitelist
-    isFeatured: repo.topics.includes('appforge-featured'),
-    topics: repo.topics || [],
+    isFeatured: topics.includes('appforge-featured'),
+    topics,
+    repoUrl: repo.html_url,
+    homepage: repo.homepage || undefined,
+    language: repo.language || undefined,
+    dataSource: 'github',
+    kind: inferKind(topics),
   };
 }
 
@@ -61,7 +68,6 @@ function inferCategory(topics: string[]): Category {
     'vue': 'web-apps',
     'android': 'android',
     'mobile': 'android',
-    'ios': 'android', // Mapping iOS to mobile category
     'desktop': 'desktop',
     'windows': 'desktop',
     'macos': 'desktop',
@@ -133,8 +139,15 @@ function inferPlatforms(topics: string[]): Platform[] {
   if (platforms.length === 0) {
     // Determine generic defaults based on category?
     // For now, return a safe default
-    return ['linux']; 
+    return [];
   }
 
   return Array.from(new Set(platforms)); // Unique
+}
+
+function inferKind(topics: string[]): NonNullable<App['kind']> {
+  if (topics.some(topic => ['awesome', 'awesome-list', 'roadmap', 'resources', 'tutorial'].includes(topic))) return 'resource';
+  if (topics.some(topic => ['framework', 'library', 'sdk', 'ui-library'].includes(topic))) return 'framework';
+  if (topics.some(topic => ['cli', 'developer-tools', 'devtools', 'database'].includes(topic))) return 'tool';
+  return 'app';
 }

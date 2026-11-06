@@ -8,8 +8,12 @@ coverage/
 
 # Next.js
 .next/
+.next-production/
+.next-preview/
+artifacts/
+.playwright-mcp/
 out/
-build/
+/build/
 
 # Production
 dist/

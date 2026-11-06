@@ -1,5 +1,6 @@
 import type { Config } from 'tailwindcss';
 import typography from '@tailwindcss/typography';
+import animate from 'tailwindcss-animate';
 
 const config: Config = {
   darkMode: 'class',
@@ -48,7 +49,11 @@ const config: Config = {
           foreground: "rgb(var(--foreground) / <alpha-value>)",
         },
         card: {
-          DEFAULT: "rgb(var(--background) / <alpha-value>)",
+          DEFAULT: "rgb(var(--card) / <alpha-value>)",
+          foreground: "rgb(var(--foreground) / <alpha-value>)",
+        },
+        popover: {
+          DEFAULT: "rgb(var(--popover) / <alpha-value>)",
           foreground: "rgb(var(--foreground) / <alpha-value>)",
         },
         // Neutral colors for backgrounds and text
@@ -58,7 +63,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Manrope Variable', 'Segoe UI', 'Arial', 'sans-serif'],
+        heading: ['Manrope Variable', 'Segoe UI', 'Arial', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
       },
       animation: {
@@ -118,6 +124,7 @@ const config: Config = {
   },
   plugins: [
     typography,
+    animate,
   ],
 };
 

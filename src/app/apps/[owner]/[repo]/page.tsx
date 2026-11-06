@@ -1,283 +1,41 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Star, GitFork, ExternalLink, Download, AlertCircle, CheckCircle2, FileArchive, Smartphone } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import { getRepository, getReadme, getReleases } from '@/lib/github';
-import { mapRepoToApp } from '@/lib/adapters';
+import { ArrowUpRight, BookOpen, ChevronRight, GitFork, Github, Sparkles, Star } from 'lucide-react';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { getProject } from '@/lib/projects';
+import { getApps } from '@/lib/apps';
+import { appKey, categoryName, PLATFORM_NAMES, recommendApps } from '@/lib/discovery';
+import { AppIcon } from '@/components/apps/AppIcon';
+import { AppCard, SaveButton } from '@/components/apps/AppCard';
+import { ReleaseDownloads } from '@/components/apps/ReleaseDownloads';
+import { formatNumber } from '@/lib/utils';
 
 export const revalidate = 3600;
-
-interface PageProps {
-  params: {
-    owner: string;
-    repo: string;
-  };
-}
-
+interface PageProps { params: { owner: string; repo: string } }
+const validName = (name: string) => /^[a-zA-Z0-9_.-]+$/.test(name);
 export async function generateMetadata({ params }: PageProps) {
-  const { owner, repo: repoName } = params;
-  const repo = await getRepository(owner, repoName);
-  
-  if (!repo) {
-    return {
-      title: 'App Not Found - OpenStore',
-    };
-  }
-
-  return {
-    title: `${repo.name} - OpenStore`,
-    description: repo.description,
-  };
+  if (!validName(params.owner) || !validName(params.repo)) return { title: 'Repository unavailable' };
+  const project = await getProject(params.owner, params.repo);
+  return { title: project?.app.name ?? `${params.owner}/${params.repo}`, description: project?.app.shortDescription };
 }
-
-function getFileIcon(filename: string) {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.apk')) return <Smartphone className="h-4 w-4" />;
-  if (lower.endsWith('.zip') || lower.endsWith('.tar.gz') || lower.endsWith('.gz')) return <FileArchive className="h-4 w-4" />;
-  if (lower.endsWith('.exe') || lower.endsWith('.msi')) return <Download className="h-4 w-4" />;
-  if (lower.endsWith('.dmg') || lower.endsWith('.pkg')) return <Download className="h-4 w-4" />;
-  if (lower.endsWith('.deb') || lower.endsWith('.rpm') || lower.endsWith('.appimage')) return <Download className="h-4 w-4" />;
-  return <Download className="h-4 w-4" />;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-}
-
 export default async function AppPage({ params }: PageProps) {
-  const { owner, repo: repoName } = params;
-  
-  const repo = await getRepository(owner, repoName);
-
-  if (!repo) {
-    return (
-      <div className="container-custom py-20 text-center">
-        <div className="glass-card rounded-2xl p-12 max-w-md mx-auto">
-          <AlertCircle className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold mb-4">App not found</h1>
-          <p className="text-muted-foreground mb-8">The repository &quot;{owner}/{repoName}&quot; could not be retrieved from GitHub.</p>
-          <Link href="/apps" className="btn-primary">Back to Apps</Link>
-        </div>
-      </div>
-    );
-  }
-
-  const readme = await getReadme(owner, repoName);
-  const releases = await getReleases(owner, repoName);
-
-  const app = await mapRepoToApp(repo);
-  const latestRelease = releases && releases.length > 0 ? releases[0] : null;
-  
-  const downloadableAssets = latestRelease?.assets.filter(asset => {
-    const name = asset.name.toLowerCase();
-    return name.endsWith('.apk') || 
-           name.endsWith('.zip') || 
-           name.endsWith('.exe') || 
-           name.endsWith('.dmg') ||
-           name.endsWith('.deb') ||
-           name.endsWith('.rpm') ||
-           name.endsWith('.appimage') ||
-           name.endsWith('.tar.gz') ||
-           name.endsWith('.msi') ||
-           name.endsWith('.pkg');
-  }) || [];
-
-  return (
-    <div className="min-h-screen pb-20 pt-24">
-      <div className="relative overflow-hidden border-b bg-background">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-background pointer-events-none" />
-        
-        <div className="container-custom py-12 md:py-16 relative z-10">
-          <Link href="/apps" className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-primary mb-8 transition-colors group">
-            <ArrowLeft className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1" /> Back to apps
-          </Link>
-
-          <div className="flex flex-col lg:flex-row items-start gap-8">
-            <div className="h-32 w-32 md:h-40 md:w-40 rounded-2xl bg-white dark:bg-slate-900 shadow-xl flex items-center justify-center border border-white/20 p-6 flex-shrink-0 backdrop-blur-sm">
-               {app.logo ? (
-                  <Image 
-                    src={app.logo} 
-                    alt={app.name} 
-                    width={160}
-                    height={160}
-                    className="h-full w-full object-contain drop-shadow-md" 
-                    unoptimized
-                  />
-                ) : (
-                  <div className="text-5xl font-bold font-heading text-primary/40">{app.name.charAt(0)}</div>
-                )}
-            </div>
-
-            <div className="flex-grow space-y-6 min-w-0">
-              <div>
-                <h1 className="text-4xl md:text-5xl font-bold font-heading tracking-tight break-words">{app.name}</h1>
-                <p className="text-xl text-muted-foreground mt-3 leading-relaxed">{app.shortDescription}</p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 text-sm font-medium">
-                <Link href={`/apps?category=${app.category}`} className="inline-flex items-center rounded-full bg-secondary/80 px-4 py-1.5 text-secondary-foreground hover:bg-secondary transition-colors border border-border/50">
-                  {app.category}
-                </Link>
-                <div className="flex flex-wrap items-center gap-4 md:gap-6 text-muted-foreground">
-                  <span className="flex items-center text-amber-500/90" title="Stars">
-                    <Star className="mr-1.5 h-4 w-4 fill-current" /> {app.stats.stars.toLocaleString()}
-                  </span>
-                  <span className="flex items-center text-blue-500/90" title="Forks">
-                    <GitFork className="mr-1.5 h-4 w-4" /> {app.stats.forks.toLocaleString()}
-                  </span>
-                  <span className="flex items-center">
-                   Verified by <span className="text-foreground ml-1">{app.maintainer.name}</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 w-full lg:w-auto lg:min-w-[240px]">
-              {downloadableAssets.length > 0 ? (
-                <>
-                  <a 
-                    href={downloadableAssets[0].browser_download_url} 
-                    download
-                    className="btn-primary h-12 text-base w-full shadow-lg shadow-primary/25"
-                  >
-                    {getFileIcon(downloadableAssets[0].name)}
-                    <span className="ml-2">Download {downloadableAssets[0].name.split('.').pop()?.toUpperCase()}</span>
-                  </a>
-                  {latestRelease && (
-                    <div className="text-xs text-center text-muted-foreground flex flex-col gap-1">
-                      <span className="font-mono bg-secondary px-2 py-0.5 rounded">v{latestRelease.tag_name}</span>
-                      <span className="text-muted-foreground/60">{formatBytes(downloadableAssets[0].size)}</span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <a 
-                    href={latestRelease ? latestRelease.html_url : repo.html_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="btn-primary h-12 text-base w-full shadow-lg shadow-primary/25"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    {latestRelease ? 'Get Latest Version' : 'View on GitHub'}
-                  </a>
-                  {latestRelease && (
-                    <div className="text-xs text-center text-muted-foreground">
-                      <span className="font-mono bg-secondary px-2 py-0.5 rounded">v{latestRelease.tag_name}</span>
-                    </div>
-                  )}
-                </>
-              )}
-              
-              <a 
-                href={repo.html_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="btn-outline h-12 w-full"
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Source Code
-              </a>
-              
-              {downloadableAssets.length > 1 && (
-                <details className="glass-card rounded-lg p-3 cursor-pointer">
-                  <summary className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-                    More Downloads ({downloadableAssets.length - 1})
-                  </summary>
-                  <div className="mt-3 space-y-2">
-                    {downloadableAssets.slice(1).map((asset) => (
-                      <a
-                        key={asset.id}
-                        href={asset.browser_download_url}
-                        download
-                        className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 transition-colors text-sm"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          {getFileIcon(asset.name)}
-                          <span className="truncate">{asset.name}</span>
-                        </div>
-                        <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
-                          {formatBytes(asset.size)}
-                        </span>
-                      </a>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="container-custom py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
-          <div className="lg:col-span-2 space-y-8">
-            <div className="glass-card rounded-2xl p-6 md:p-10 min-h-[500px]">
-               {readme ? (
-                 <article className="prose prose-zinc dark:prose-invert max-w-none prose-headings:font-heading prose-a:text-primary prose-img:rounded-xl prose-pre:bg-secondary/50">
-                   <ReactMarkdown>
-                     {readme}
-                   </ReactMarkdown>
-                 </article>
-               ) : (
-                 <div className="flex flex-col items-center justify-center h-64 text-center text-muted-foreground">
-                   <AlertCircle className="h-10 w-10 mb-4 opacity-20" />
-                   <p className="text-lg">No README available for this repository.</p>
-                 </div>
-               )}
-            </div>
-          </div>
-
-          <div className="space-y-6 lg:sticky lg:top-24 h-fit">
-            <div className="glass-card rounded-xl p-6">
-              <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-green-500" />
-                App Details
-              </h3>
-              <dl className="space-y-4 text-sm divide-y divide-border/50">
-                <div className="flex justify-between py-2 first:pt-0">
-                  <dt className="text-muted-foreground">License</dt>
-                  <dd className="font-medium text-foreground">{app.license}</dd>
-                </div>
-                <div className="flex justify-between py-2">
-                  <dt className="text-muted-foreground">Last Updated</dt>
-                  <dd className="font-medium text-foreground">{new Date(app.lastUpdated).toLocaleDateString()}</dd>
-                </div>
-                <div className="flex justify-between py-2">
-                  <dt className="text-muted-foreground">Open Issues</dt>
-                  <dd className="font-medium text-foreground">{app.stats.openIssues}</dd>
-                </div>
-                <div className="flex justify-between py-2">
-                   <dt className="text-muted-foreground">Platforms</dt>
-                   <dd className="font-medium text-right gap-1 flex flex-wrap justify-end">
-                      {app.platforms.map(p => (
-                         <span key={p} className="capitalize px-1.5 py-0.5 bg-secondary rounded text-xs">{p}</span>
-                      ))}
-                   </dd>
-                </div>
-              </dl>
-            </div>
-
-            <div className="glass-card rounded-xl p-6 border-l-4 border-l-amber-500/50">
-              <h3 className="font-bold text-lg mb-4">Security & Privacy</h3>
-              <ul className="space-y-3 text-sm">
-                <li className="flex items-start gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-muted-foreground"><strong className="text-foreground">Open Source:</strong> Code is publicly available for audit.</span>
-                </li>
-                 <li className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-muted-foreground"><strong className="text-foreground">Community Build:</strong> This build is not verified by the original author.</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const valid = validName(params.owner) && validName(params.repo);
+  const project = valid ? await getProject(params.owner, params.repo) : null;
+  const repoUrl = `https://github.com/${encodeURIComponent(params.owner)}/${encodeURIComponent(params.repo)}`;
+  if (!project) return <div className="standard-page"><div className="empty-state"><Github size={33} /><h1 className="text-2xl font-semibold">This repository could not be loaded.</h1><p>Check the owner and repository name, or open the source directly while GitHub is unavailable.</p>{valid && <a href={repoUrl} target="_blank" rel="noreferrer" className="btn-primary px-5 py-3">Open on GitHub<ArrowUpRight size={16} /></a>}<Link href="/apps" className="link">Back to the catalog</Link></div></div>;
+  const { app, repo, readme, releases } = project;
+  const latest = releases[0];
+  const related = recommendApps(await getApps(), [app], [appKey(app)], 4);
+  const markdownUrl = (url: string, key: string) => {
+    if (url.startsWith('#')) return `${repoUrl}${url}`;
+    const safe = defaultUrlTransform(url);
+    if (!safe) return '';
+    if (/^https?:\/\//i.test(safe) || /^mailto:/i.test(safe)) return safe;
+    if (safe.startsWith('//')) return `https:${safe}`;
+    const base = key === 'src' ? `https://raw.githubusercontent.com/${app.maintainer.username}/${app.slug}/${repo?.default_branch ?? 'HEAD'}/` : `${repoUrl}/blob/${repo?.default_branch ?? 'HEAD'}/`;
+    try { return new URL(safe.replace(/^\//, ''), base).href; } catch { return ''; }
+  };
+  const homepage = app.homepage && /^https?:\/\//i.test(app.homepage) ? app.homepage : undefined;
+  return <div className="standard-page"><nav className="detail-breadcrumb" aria-label="Breadcrumb"><Link href="/apps">All projects</Link><ChevronRight size={12} /><Link href={`/apps?category=${app.category}`}>{categoryName(app.category)}</Link><ChevronRight size={12} /><span>{app.name}</span></nav><section className="detail-header"><AppIcon app={app} size={82} /><div className="detail-header-copy"><h1>{app.name}</h1><p>{app.shortDescription}</p><div className="detail-metadata"><a href={repoUrl} target="_blank" rel="noreferrer">{app.maintainer.username}/{app.slug}</a>{app.dataSource === 'github' && <><span><Star size={14} />{formatNumber(app.stats.stars)} stars</span><span><GitFork size={14} />{formatNumber(app.stats.forks)} forks</span></>}<span>{app.kind ?? 'app'}</span></div></div><div className="detail-actions"><a className="btn-primary" href={homepage ?? latest?.html_url ?? repoUrl} target="_blank" rel="noreferrer">{homepage ? 'Visit website' : latest ? 'Get the latest release' : 'Open on GitHub'}<ArrowUpRight size={15} /></a><SaveButton app={app} compact={false} /><a className="btn-outline" href={repoUrl} target="_blank" rel="noreferrer"><Github size={15} />Source repository</a></div></section>{!repo && <p className="catalog-notice mt-5" role="status">Showing curated information while GitHub is unavailable. Open the source repository for current releases and documentation.</p>}<section className="detail-ai-panel"><div><Sparkles size={22} /><div><h2>Understand what is under the hood.</h2><p>Get a source-based explanation, follow a feature, or plan your own implementation.</p></div></div><nav aria-label="Repository AI workflows">{[{ id: 'explain', label: 'Explain with AI' }, { id: 'setup', label: 'Setup guide' }, { id: 'trace', label: 'Trace a feature' }, { id: 'rebuild', label: 'Rebuild blueprint' }].map(item => <Link key={item.id} href={`/assistant?repo=${encodeURIComponent(`${app.maintainer.username}/${app.slug}`)}&workflow=${item.id}`}>{item.label}<ArrowUpRight size={13} /></Link>)}</nav></section><div className="detail-columns"><section className="readme-panel"><h2 className="readme-heading"><BookOpen size={17} />About this project</h2>{readme ? <article className="prose prose-slate dark:prose-invert max-w-none prose-a:text-primary"><ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrl} components={{ a: ({ href, children }) => <a href={href} target={href?.startsWith('#') ? undefined : '_blank'} rel="noreferrer">{children}</a>, img: ({ src, alt }) => src ? <Image src={src} alt={alt ?? ''} width={900} height={500} unoptimized className="h-auto w-auto max-w-full" /> : null }}>{readme}</ReactMarkdown></article> : <div className="py-8"><h3 className="text-lg font-semibold mb-3">Explore {app.name}</h3><p className="text-muted-foreground text-sm leading-7">{app.shortDescription} Read the project documentation for installation steps, supported platforms, and usage guides.</p><a className="link inline-flex items-center gap-2 mt-5 text-sm" href={`${repoUrl}#readme`} target="_blank" rel="noreferrer">Read documentation on GitHub<ArrowUpRight size={14} /></a></div>}</section><aside className="detail-sidebar">{latest && <ReleaseDownloads assets={latest.assets} releaseUrl={latest.html_url} version={latest.tag_name} />}<section className="detail-panel"><h2>Project details</h2><dl><div><dt>Category</dt><dd>{categoryName(app.category)}</dd></div><div><dt>License</dt><dd><a className="link" href={`${repoUrl}#license`} target="_blank" rel="noreferrer">{app.license === 'Other' ? 'View project license' : app.license}</a></dd></div><div><dt>Platforms</dt><dd>{app.platforms.map(platform => PLATFORM_NAMES[platform]).join(', ') || 'See documentation'}</dd></div><div><dt>Last source update</dt><dd>{app.lastUpdated ? new Date(app.lastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not available'}</dd></div>{app.language && <div><dt>Language</dt><dd>{app.language}</dd></div>}{repo && <div><dt>Open issues</dt><dd>{app.stats.openIssues.toLocaleString()}</dd></div>}</dl><div className="detail-topics">{app.topics.slice(0, 9).map(topic => <Link key={topic} href={`/apps?q=${encodeURIComponent(topic)}`}>{topic}</Link>)}</div></section><section className="detail-panel"><h2>From the source</h2><p>Repository links and release assets come from the original project on GitHub. Check the project’s license for how you can use, modify, or redistribute it.</p><a className="link text-xs inline-flex items-center gap-2 mt-4" href={`${repoUrl}/releases`} target="_blank" rel="noreferrer">Browse all releases<ArrowUpRight size={13} /></a></section></aside></div>{related.length > 0 && <section className="related-section"><div className="section-heading"><div><h2>Keep exploring</h2><p>A few related projects you might find useful.</p></div></div><div className="app-grid">{related.map(item => <AppCard key={appKey(item)} app={item} />)}</div></section>}</div>;
 }

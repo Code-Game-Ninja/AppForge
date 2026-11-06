@@ -1,7 +1,9 @@
+import 'server-only';
 // GitHub API Integration for AppForge
 // Fetches repository data, README, releases, etc.
 
 const GITHUB_API_BASE = 'https://api.github.com';
+let repositoryRetryAt = 0;
 
 // Token should be in environment variable (server-side only)
 const getHeaders = () => {
@@ -82,17 +84,23 @@ export interface GitHubReadme {
  * Fetch repository information
  */
 export async function getRepository(owner: string, repo: string): Promise<GitHubRepo | null> {
+  if (Date.now() < repositoryRetryAt) return null;
   try {
     const response = await fetch(
       `${GITHUB_API_BASE}/repos/${owner}/${repo}`,
       {
         headers: getHeaders(),
+        signal: AbortSignal.timeout(8000),
         next: { revalidate: 3600 },
       } as RequestInit
     );
 
     if (!response.ok) {
-      console.error(`GitHub API error: ${response.status} for repo ${owner}/${repo} - ${await response.text()}`);
+      if (response.status === 403 || response.status === 429) {
+        const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000;
+        repositoryRetryAt = Math.max(Date.now() + 60_000, Math.min(reset || Date.now() + 600_000, Date.now() + 3_600_000));
+      }
+      console.error(`GitHub API error: ${response.status} for repo ${owner}/${repo}`);
       return null;
     }
 
@@ -112,6 +120,7 @@ export async function getReadme(owner: string, repo: string): Promise<string | n
       `${GITHUB_API_BASE}/repos/${owner}/${repo}/readme`,
       {
         headers: getHeaders(),
+        signal: AbortSignal.timeout(8000),
         next: { revalidate: 3600 },
       } as RequestInit
     );
@@ -145,6 +154,7 @@ export async function getReleases(
       `${GITHUB_API_BASE}/repos/${owner}/${repo}/releases?per_page=${limit}`,
       {
         headers: getHeaders(),
+        signal: AbortSignal.timeout(8000),
         next: { revalidate: 3600 },
       } as RequestInit
     );
@@ -172,7 +182,7 @@ export async function searchRepositories(
     perPage?: number;
     page?: number;
   } = {}
-): Promise<{ items: GitHubRepo[]; total_count: number }> {
+): Promise<{ items: GitHubRepo[]; total_count: number; error?: string }> {
   try {
     const {
       topics = [],
@@ -208,28 +218,25 @@ export async function searchRepositories(
     });
 
     const url = `${GITHUB_API_BASE}/search/repositories?${params}`;
-    console.log(`GitHub Search URL: ${url}`);
 
     const response = await fetch(
       url,
       {
         headers: getHeaders(),
+        signal: AbortSignal.timeout(8000),
         next: { revalidate: 1800 },
       } as RequestInit
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`GitHub search error: ${response.status} - ${errorText}`);
-      return { items: [], total_count: 0 };
+      return { items: [], total_count: 0, error: response.status === 403 || response.status === 429 ? 'GitHub’s request limit was reached. Your curated catalog is still available.' : 'GitHub search is unavailable. Your curated catalog is still available.' };
     }
 
     const data = await response.json();
-    console.log(`GitHub Search returned ${data.total_count} total, ${data.items?.length || 0} items`);
     return data;
   } catch (error) {
     console.error('Failed to search repositories:', error);
-    return { items: [], total_count: 0 };
+    return { items: [], total_count: 0, error: 'Could not connect to GitHub. Your curated catalog is still available.' };
   }
 }
 
