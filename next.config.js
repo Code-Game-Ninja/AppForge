@@ -37,6 +37,9 @@ const nextConfig = {
 
 module.exports = (phase) => ({
   ...nextConfig,
-  // Keep production builds and development previews from overwriting each other.
-  distDir: process.env.APPFORGE_DIST_DIR || (phase === PHASE_DEVELOPMENT_SERVER ? '.next' : '.next-production'),
+  // Keep production builds and development previews from overwriting each other locally.
+  // On Vercel, Next.js requires the output directory to be '.next'.
+  distDir:
+    process.env.APPFORGE_DIST_DIR ||
+    (process.env.VERCEL ? '.next' : phase === PHASE_DEVELOPMENT_SERVER ? '.next' : '.next-production'),
 });
