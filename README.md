@@ -60,21 +60,27 @@ Saved projects persist in local storage without an account and synchronize betwe
 
 ## Connect your AI endpoint
 
-Copy `.env.example` to `.env.local` and configure your own service:
+Copy `.env.example` to `.env.local` and add your server-side Bluesminds API key. The current default connection uses Chat Completions with Nemotron:
 
 ```dotenv
 AI_PROVIDER=compatible
+AI_PROVIDER_NAME=Bluesminds
 AI_API_FORMAT=chat
-AI_ENDPOINT=https://your-provider.example/v1/chat/completions
-AI_MODEL=your-model-id
+AI_OUTPUT_FORMAT=json_object
+AI_REASONING_TOKEN_RESERVE=8000
+AI_SEARCH_COMPARISON_LIMIT=12
+AI_REQUEST_TIMEOUT_MS=100000
+AI_ENDPOINT=https://api.bluesminds.com/v1/chat/completions
+AI_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
 AI_API_KEY=your-server-side-key
+AI_TRANSPORT=http
 ```
 
-Use either `AI_ENDPOINT` for an exact endpoint or `AI_BASE_URL` for a base URL. With a base URL, AppForge adds `/chat/completions` for `chat` and `/responses` for `responses`. The endpoint must support the selected OpenAI-compatible request/response format and strict JSON-schema output. Arbitrary custom JSON protocols require an adapter in `src/lib/ai/provider.ts`.
+Use either `AI_ENDPOINT` for an exact endpoint or `AI_BASE_URL` for a base URL. With a base URL, AppForge adds `/chat/completions` for `chat` and `/responses` for `responses`. The endpoint must support the selected OpenAI-compatible request/response format. Bluesminds uses `AI_OUTPUT_FORMAT=json_object`: the server supplies its report schema as trusted system guidance and validates every answer against the same shape, citation, candidate, and secret checks. Providers with reliable strict schema output can use `AI_OUTPUT_FORMAT=json_schema` (the default when unset). JSON object mode is available only with Chat Completions over HTTP. Arbitrary custom JSON protocols require an adapter in `src/lib/ai/provider.ts`.
 
-For a Responses-compatible endpoint, set `AI_API_FORMAT=responses`. For OpenAI itself, set `AI_PROVIDER=openai` and choose an explicit model; its default URL is `https://api.openai.com/v1`. For Ollama, use `AI_PROVIDER=ollama`, `AI_MODEL`, and optionally `AI_BASE_URL=http://127.0.0.1:11434`; no API key is required. Remote providers require HTTPS; local loopback HTTP is supported. Endpoint configuration is controlled by the server operator.
+When switching services, replace or clear the configured `AI_ENDPOINT` and `AI_BASE_URL` so the previous service's URL is not reused. For a Responses-compatible endpoint, set `AI_API_FORMAT=responses` and `AI_OUTPUT_FORMAT=json_schema`. For OpenAI itself, set `AI_PROVIDER=openai` and choose an explicit model; its default URL is `https://api.openai.com/v1`. For Ollama, use `AI_PROVIDER=ollama`, `AI_OUTPUT_FORMAT=json_schema`, `AI_MODEL`, and optionally `AI_BASE_URL=http://127.0.0.1:11434`; no API key is required. Remote providers require HTTPS; local loopback HTTP is supported. Endpoint configuration is controlled by the server operator.
 
-For Agent Router's supported Codex client connection, use these server-only settings alongside `AI_API_KEY` in `.env.local`:
+To use Agent Router instead, its supported Codex client connection uses these server-only settings alongside `AI_API_KEY` in `.env.local`:
 
 ```env
 AI_PROVIDER=compatible
@@ -85,6 +91,7 @@ AI_MODEL=gpt-6.1-sol
 AI_REASONING_EFFORT=high
 AI_SERVICE_TIER=fast
 AI_TRANSPORT=codex
+AI_OUTPUT_FORMAT=json_schema
 AI_CODEX_PATH=/absolute/path/to/codex
 ```
 
@@ -95,6 +102,14 @@ AppForge starts the official client with a fresh temporary home and working dire
 `AI_SERVICE_TIER=fast` maps to API `priority`; `AI_REASONING_EFFORT=high` selects high reasoning. These settings are also supported by the HTTP Responses adapter, with additional token space for reasoning. Agent Router may reject generic HTTP clients with `unauthorized_client_error` even when a key works in Codex. AppForge distinguishes that client restriction from credential authorization failures and preserves GitHub browsing when AI is unavailable. See [Agent Router's Codex setup](https://github.com/agentrouter-org/docs/blob/main/en/codex.md) and [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
 Restart the server after configuration changes. The assistant shows an unavailable state until an endpoint, model, and required key are configured. All credentials stay in server environment variables; never prefix them with `NEXT_PUBLIC_` or enter them into a repository question.
+
+`AI_REASONING_TOKEN_RESERVE` adds 0–16,000 tokens to each HTTP call's normal output limit. Bluesminds Nemotron uses 8,000 extra tokens so reasoning can finish before the report or search plan is emitted. This raises the total output ceiling; it does not enforce a separate internal thinking budget. Reasoning text is not rendered or exported. Interrupted answers remain rejected.
+
+`AI_SEARCH_COMPARISON_LIMIT` selects 1–60 metadata candidates for each AI comparison (default 60 when unset). The Bluesminds setup uses the 12 highest-ranked matches to keep comparisons focused; every fetched match remains browsable and pagination continues to fetch more repositories. The report's scope lists the configured comparison limit.
+
+`AI_REQUEST_TIMEOUT_MS` sets the HTTP model timeout (1,000–100,000 ms; default 60,000). Bluesminds allows 100 seconds for a report, while search planning is capped at 30 seconds so the full discovery request remains within the assistant's request window.
+
+Bluesminds can return gateway timeouts on longer comparisons. When planning or comparison fails, AppForge retains the GitHub matches and displays an explicit warning that AI comparison is unavailable. Invalid or interrupted reports are rejected rather than displayed as verified AI picks.
 
 The assistant is available at `/assistant`, from Add a repository and repository details. Build finder includes description-based GitHub discovery alongside editorial starter stacks. Follow-up questions start a focused new source review or project search; they do not carry a private chat history.
 

@@ -60,18 +60,19 @@ const string = { type: 'string' };
 const array = (items: object) => ({ type: 'array', items });
 const object = (properties: Record<string, object>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 
-export function reportSchema(sourceIds: string[], repositories: string[]) {
-  const citations = { ...array(sourceIds.length ? { type: 'string', enum: sourceIds } : string), ...(sourceIds.length ? {} : { maxItems: 0 }) };
+export function reportSchema(sourceIds: string[], repositories: string[], workflow: AIWorkflow = 'explain') {
+  const sectionIds = workflow === 'recommend' ? ['overview', 'limitations'] : SECTION_IDS;
+  const citations = { ...array(sourceIds.length ? { type: 'string', enum: sourceIds } : string), maxItems: sourceIds.length ? 12 : 0 };
   return object({
     disposition: { type: 'string', enum: ['answered', 'needs_clarification', 'refused'] },
-    title: string,
-    summary: string,
-    sections: array(object({
-      id: { type: 'string', enum: SECTION_IDS },
-      heading: string,
-      items: array(object({ text: string, certainty: { type: 'string', enum: ['documented', 'inferred', 'unknown'] }, sourceIds: citations })),
-    })),
-    recommendations: { ...array(object({ repo: repositories.length ? { type: 'string', enum: repositories } : string, reason: string, tradeoff: string, sourceIds: citations })), ...(repositories.length ? {} : { maxItems: 0 }) },
-    nextQuestion: string,
+    title: { ...string, minLength: 1, maxLength: 140, description: 'Required non-empty report title, including for refusals and clarification requests.' },
+    summary: { ...string, minLength: 1, maxLength: 2200, description: 'Required non-empty summary. For refusals or clarification requests, explain why here.' },
+    sections: { ...array(object({
+      id: { type: 'string', enum: sectionIds, description: 'Unique section ID. Each ID may appear at most once across the sections array; merge related items.' },
+      heading: { ...string, maxLength: 120 },
+      items: { ...array(object({ text: { ...string, maxLength: 1800 }, certainty: { type: 'string', enum: ['documented', 'inferred', 'unknown'] }, sourceIds: citations })), maxItems: 10 },
+    })), maxItems: sectionIds.length },
+    recommendations: { ...array(object({ repo: repositories.length ? { type: 'string', enum: repositories } : string, reason: { ...string, maxLength: 1000 }, tradeoff: { ...string, maxLength: 700 }, sourceIds: citations })), maxItems: repositories.length ? 6 : 0 },
+    nextQuestion: { ...string, maxLength: 400 },
   });
 }

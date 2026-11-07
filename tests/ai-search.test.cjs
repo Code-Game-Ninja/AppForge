@@ -81,11 +81,14 @@ test('pagination stops at GitHub’s 1,000-result cap and malformed responses be
 });
 
 test('recommendation pipeline reuses its AI plan across pages and returns evidence for new GitHub projects', async t => {
+  const oldLimit = process.env.AI_SEARCH_COMPARISON_LIMIT;
+  process.env.AI_SEARCH_COMPARISON_LIMIT = '3';
+  t.after(() => oldLimit === undefined ? delete process.env.AI_SEARCH_COMPARISON_LIMIT : process.env.AI_SEARCH_COMPARISON_LIMIT = oldLimit);
   let plans=0, comparisons=0;
   mockFetch(t, async url => { const page = Number(new URL(url).searchParams.get('page')); return json({items:items('page'+page+'tool'),total_count:50,incomplete_results:false}); });
   const realLoad = createLoader({ './provider': {
     planProjectSearch: async () => {plans++; return {disposition:'search',queries:['ai tools'],question:''};},
-    generateReport: async (_task,sources,candidates) => { comparisons++; return {disposition:'answered',title:'Tools for your task',summary:'GitHub metadata comparison.',sections:[],recommendations:[{repo:candidates[0].repo,reason:'Fits local AI use',tradeoff:'Review requirements',sourceIds:[sources[0].id]}],nextQuestion:''}; }
+    generateReport: async (_task,sources,candidates) => { comparisons++; assert.equal(sources.length,3); assert.equal(candidates.length,3); return {disposition:'answered',title:'Tools for your task',summary:'GitHub metadata comparison.',sections:[],recommendations:[{repo:candidates[0].repo,reason:'Fits local AI use',tradeoff:'Review requirements',sourceIds:[sources[0].id]}],nextQuestion:''}; }
   }});
   const { recommendProjects } = realLoad('src/lib/ai/recommendation.ts');
   const task = {workflow:'recommend',repository:'',description:'AI tools',question:''};
@@ -95,6 +98,9 @@ test('recommendation pipeline reuses its AI plan across pages and returns eviden
   const second = await recommendProjects({...task,cursor:first.search.nextCursor});
   assert.equal(plans,1); assert.equal(comparisons,2); assert.equal(second.search.batch,2); assert.equal(second.search.nextCursor,null);
   assert.ok(second.matches[0].slug.startsWith('page2'));
+  assert.ok(second.coverage.notes.some(note => note.includes('maximum of 3')));
+  process.env.AI_SEARCH_COMPARISON_LIMIT = '0';
+  await assert.rejects(recommendProjects(task), code('provider_unavailable'));
 });
 
 test('AI planning and comparison failures preserve GitHub discovery without fabricated AI picks', async t => {

@@ -34,13 +34,19 @@ export function providerConfiguration() {
   } catch { throw new AIError('provider_unavailable', 'The assistant is not available right now.', 503); }
   const label = (process.env.AI_PROVIDER_NAME || (provider === 'openai' ? 'OpenAI' : provider === 'ollama' ? 'Ollama' : 'the configured AI provider')).replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 60);
   const transport = process.env.AI_TRANSPORT || 'http';
+  const outputFormat = process.env.AI_OUTPUT_FORMAT || 'json_schema';
   const codexPath = process.env.AI_CODEX_PATH || '';
   const reasoningEffort = process.env.AI_REASONING_EFFORT || '';
+  const reasoningTokenReserve = Number(process.env.AI_REASONING_TOKEN_RESERVE || (format === 'responses' && reasoningEffort && reasoningEffort !== 'none' ? 8000 : 0));
+  const requestTimeoutMs = Number(process.env.AI_REQUEST_TIMEOUT_MS || 60000);
   const configuredTier = process.env.AI_SERVICE_TIER || '';
   const serviceTier = configuredTier === 'fast' ? 'priority' : configuredTier;
   if (!['http', 'codex'].includes(transport) || !['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(reasoningEffort) || !['', 'auto', 'default', 'priority', 'flex'].includes(serviceTier)) throw new AIError('provider_unavailable', 'The assistant is not available right now.', 503);
+  if (!['json_schema', 'json_object'].includes(outputFormat) || (outputFormat === 'json_object' && (format !== 'chat' || transport !== 'http'))) throw new AIError('provider_unavailable', 'The assistant is not available right now.', 503);
+  if (!Number.isInteger(reasoningTokenReserve) || reasoningTokenReserve < 0 || reasoningTokenReserve > 16000) throw new AIError('provider_unavailable', 'The assistant is not available right now.', 503);
+  if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 1000 || requestTimeoutMs > 100000) throw new AIError('provider_unavailable', 'The assistant is not available right now.', 503);
   if (transport === 'codex' && (format !== 'responses' || !isAbsolute(codexPath) || !endpoint.endsWith('/responses') || !['', 'priority'].includes(serviceTier))) throw new AIError('ai_client_unavailable', 'The AI client needs a supported server configuration.', 503);
-  return { provider, format, key, model, endpoint, label, transport, codexPath, reasoningEffort, serviceTier };
+  return { provider, format, key, model, endpoint, label, transport, outputFormat, codexPath, reasoningEffort, reasoningTokenReserve, requestTimeoutMs, serviceTier };
 }
 
 export function buildModelInput(request: AIRequest, sources: EvidenceSource[], candidates: { repo: string; sourceId: string }[]) {
@@ -57,13 +63,20 @@ async function generateStructured(input: { role: 'developer' | 'user'; content: 
   if (config.provider !== 'ollama') headers.Authorization = `Bearer ${config.key}`;
   let payload: object;
   if (config.format === 'responses') {
-    payload = { model: config.model, input, store: false, stream: false, max_output_tokens: maxTokens + (config.reasoningEffort && config.reasoningEffort !== 'none' ? 8000 : 0), ...(config.reasoningEffort ? { reasoning: { effort: config.reasoningEffort } } : {}), ...(config.serviceTier ? { service_tier: config.serviceTier } : {}), text: { format: { type: 'json_schema', name, strict: true, schema } } };
+    payload = { model: config.model, input, store: false, stream: false, max_output_tokens: maxTokens + config.reasoningTokenReserve, ...(config.reasoningEffort ? { reasoning: { effort: config.reasoningEffort } } : {}), ...(config.serviceTier ? { service_tier: config.serviceTier } : {}), text: { format: { type: 'json_schema', name, strict: true, schema } } };
   } else {
     const messages = input.map(message => ({ ...message, role: message.role === 'developer' ? 'system' : message.role }));
-    payload = config.provider === 'ollama' ? { model: config.model, messages, stream: false, format: schema, options: { num_predict: maxTokens } } : { model: config.model, messages, max_tokens: maxTokens, response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } } };
+    // Some compatible providers handle JSON objects more reliably than schema
+    // constrained decoding. The server-generated schema remains trusted guidance;
+    // untrusted evidence stays in user messages and runtime validation is identical.
+    if (config.outputFormat === 'json_object') messages[0].content += `\n\nREQUIRED JSON OUTPUT SCHEMA (${name})\nReturn one JSON object matching this server-supplied schema.\n${JSON.stringify(schema)}`;
+    payload = config.provider === 'ollama' ? { model: config.model, messages, stream: false, format: schema, options: { num_predict: maxTokens + config.reasoningTokenReserve } } : { model: config.model, messages, stream: false, max_tokens: maxTokens + config.reasoningTokenReserve, response_format: config.outputFormat === 'json_object' ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name, strict: true, schema } } };
   }
   let response: Response;
-  try { response = await fetch(config.endpoint, { method: 'POST', headers, body: JSON.stringify(payload), redirect: 'error', signal: AbortSignal.timeout(60_000), cache: 'no-store' }); }
+  // Keep search planning short so planning, GitHub retrieval, and one comparison
+  // fit within the assistant's overall request window.
+  const timeoutMs = name === 'appforge_search_plan' ? Math.min(config.requestTimeoutMs, 30000) : config.requestTimeoutMs;
+  try { response = await fetch(config.endpoint, { method: 'POST', headers, body: JSON.stringify(payload), redirect: 'error', signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' }); }
   catch { throw new AIError('ai_unavailable', 'The AI service could not be reached. Try again later.', 503); }
   if (response.status === 401 || response.status === 403) {
     const diagnostic = await readLimitedText(response, 16_000).catch(() => '');
@@ -99,12 +112,15 @@ async function generateStructured(input: { role: 'developer' | 'user'; content: 
   if (refused) return { value: null, refused: true };
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { throw new AIError('invalid_answer', 'The answer could not be validated. Try a more focused question.', 502); }
+  // Discard all model content for an explicit refusal. Providers may include
+  // extra report sections in JSON-mode refusals; only our fixed refusal is shown.
+  if (parsed && typeof parsed === 'object' && (parsed as Record<string, unknown>).disposition === 'refused') return { value: null, refused: true };
   return { value: parsed, refused: false };
 }
 
 export async function generateReport(request: AIRequest, sources: EvidenceSource[], candidates: { repo: string; sourceId: string }[]): Promise<AIReport> {
   const config = providerConfiguration();
-  const output = await generateStructured(buildModelInput(request, sources, candidates), reportSchema(sources.map(source => source.id), candidates.map(candidate => candidate.repo)), 'appforge_research', 5000);
+  const output = await generateStructured(buildModelInput(request, sources, candidates), reportSchema(sources.map(source => source.id), candidates.map(candidate => candidate.repo), request.workflow), 'appforge_research', 5000);
   if (output.refused) return { disposition: 'refused', title: 'Try a different question', summary: 'The assistant cannot help with this request. Ask about project capabilities, setup, architecture, or an original implementation plan.', sections: [], recommendations: [], nextQuestion: '' };
   return validateReport(output.value, sources.map(source => source.id), candidates.map(candidate => candidate.repo), [config.key, process.env.GITHUB_TOKEN || ''], candidates);
 }

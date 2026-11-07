@@ -26,7 +26,7 @@ export async function analyze(request: AIRequest): Promise<AIResult> {
     // Only public, generic repository reports are shared. Personal descriptions
     // and follow-up questions are never cached or reused across people.
     const cacheable = evidence?.commit && !request.description && !request.question;
-    const key = cacheable ? createHash('sha256').update(JSON.stringify([AI_POLICY_VERSION, config.provider, config.format, config.endpoint, config.model, config.transport, config.reasoningEffort, config.serviceTier, request.workflow, request.repository.toLowerCase(), evidence.commit, evidence.sources.map(source => source.text)])).digest('hex') : '';
+    const key = cacheable ? createHash('sha256').update(JSON.stringify([AI_POLICY_VERSION, config.provider, config.format, config.endpoint, config.model, config.transport, config.outputFormat, config.reasoningEffort, config.reasoningTokenReserve, config.serviceTier, request.workflow, request.repository.toLowerCase(), evidence.commit, evidence.sources.map(source => source.text)])).digest('hex') : '';
     if (key) {
       const cached = publicReports.get(key);
       if (cached && cached.expires > Date.now()) return cached.result;

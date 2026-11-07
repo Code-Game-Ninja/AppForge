@@ -31,6 +31,8 @@ function prioritize(apps: App[], description: string): App[] {
 }
 
 export async function recommendProjects(request: AIRequest): Promise<AIResult> {
+  const comparisonLimit = Number(process.env.AI_SEARCH_COMPARISON_LIMIT || 60);
+  if (!Number.isInteger(comparisonLimit) || comparisonLimit < 1 || comparisonLimit > 60) throw new AIError('provider_unavailable', 'The assistant needs a valid project comparison limit.', 503);
   const warnings: string[] = [];
   let aiReady = true;
   let cursor;
@@ -58,11 +60,11 @@ export async function recommendProjects(request: AIRequest): Promise<AIResult> {
     url: `https://github.com/${app.maintainer.username}/${app.slug}`,
     text: sanitizeEvidence(JSON.stringify({ repo: appKey(app), name: app.name, description: app.shortDescription, topics: app.topics, categoryInferredFromTopics: app.category, platformsInferredFromTopics: app.platforms, license: app.license, language: app.language, stars: app.dataSource === 'github' ? app.stats.stars : null, lastSourcePush: app.lastUpdated || null, source: usingCatalog ? 'curated' : 'GitHub repository search metadata', readmeInspected: false }), secrets).text,
   }));
-  const candidates = apps.slice(0, 60).map((app, index) => ({ repo: appKey(app), sourceId: sources[index].id }));
+  const candidates = apps.slice(0, comparisonLimit).map((app, index) => ({ repo: appKey(app), sourceId: sources[index].id }));
   let report = plainReport(apps.length ? 'Repository matches for your idea' : 'No new repository matches', apps.length ? 'Browse the matches below. AI comparison is unavailable for this search.' : found.successful ? 'This search batch returned no new repositories. Try a different description or explore another batch.' : 'GitHub could not return this search batch. Retry the search when GitHub is available.');
   let aiCompared = false;
   if (apps.length && aiReady) {
-    try { report = await generateReport(request, sources.slice(0, 60), candidates); aiCompared = true; }
+    try { report = await generateReport(request, sources.slice(0, comparisonLimit), candidates); aiCompared = true; }
     catch (error) { warnings.push(...connectionWarning(error), 'AI comparison is unavailable. The GitHub matches are still available to browse, save, and analyze individually.'); }
   }
   if (usingCatalog && !aiCompared) report = plainReport('Curated projects while GitHub is unavailable', 'These are catalog matches. Retry GitHub search to discover repositories beyond the curated collection.');
@@ -70,7 +72,7 @@ export async function recommendProjects(request: AIRequest): Promise<AIResult> {
   const nextCursor = found.nextPages.some(page => page > 0) && cursor.batch < 80 ? encodeSearchCursor({ ...cursor, pages: found.nextPages, batch: cursor.batch + 1 }) : null;
   const notes = [
     usingCatalog ? 'This batch uses a curated fallback because GitHub search failed.' : 'Search spans public GitHub repository names, descriptions, and README indexes. Matches come from GitHub’s repository search API.',
-    'AI comparisons use a maximum of 60 candidate metadata records per batch. README contents and repository code were not inspected for these suggestions.',
+    `AI comparisons use a maximum of ${comparisonLimit} candidate metadata records per batch. All fetched matches remain browsable. README contents and repository code were not inspected for these suggestions.`,
     'Results are deduplicated across the complementary queries in this batch. Counts reported by individual searches can overlap and are not a count of unique repositories.',
     'GitHub limits repository search to the first 1,000 results per query. No complete inventory of GitHub or guarantee of finding every relevant project is claimed.',
   ];
